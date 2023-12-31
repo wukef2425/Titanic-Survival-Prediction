@@ -1,7 +1,7 @@
 # Titanic-Survival-Prediction
 This project aims to identify the key factors that contributed to survival outcomes during the infamous 1912 Titanic disaster. 
 
-对年龄进行分类之前
+对年龄进行分类之后
 ```
 Call:
 glm(formula = Survived ~ ., family = "binomial", data = train_data)
@@ -56,7 +56,7 @@ Prediction   0   1
        'Positive' Class : 0  
 ```
 
-分类之后
+对年龄进行分类之前
 
 ```
 Call:
@@ -107,3 +107,5 @@ Prediction   0   1
                                           
        'Positive' Class : 0   
 ```
+
+![Alt text](docs/image.png)
