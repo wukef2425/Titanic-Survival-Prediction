@@ -82,18 +82,29 @@ decimal_ages <- ages[grepl("\\.", as.character(ages))]
 
 decimal_ages
 ```
-0.5的可能真的是半岁？但0.83、0.67之类的是什么意思？有重复应该不是巧合，好像是按照月份算的？刚好是1/12的倍数。所以就是有的人是按照年份算的，有的人是按照月份算的，那直接把按照月份算的全部删除。
+0.5的可能真的是半岁？但0.83、0.67之类的是什么意思？有重复应该不是巧合，好像是按照月份算的？刚好是1/12的倍数。还是不能全部删除，因为这些都是婴儿，好像都存活下来了。Parch还都不是0，更说明了这些都是婴儿，提醒我可以给年龄做分类变量。
+```{r}
+# 假设 titanic_data 是你的数据框，Age 是其中的一个列
+ages <- titanic_data$Age
+
+# 定义年龄组边界
+breaks <- c(-Inf, 2, 12, 18, 35, 60, Inf)
+labels <- c('Infant', 'Child', 'Teenager', 'YoungAdult', 'Adult', 'Senior')
+
+# 使用cut函数将年龄转换为因子型分类变量
+age_groups <- cut(ages, breaks = breaks, labels = labels, right = FALSE)
+
+# 将年龄组添加到原始数据框中
+titanic_data$AgeGroup <- age_groups
+
+# 查看转换后的数据
+table(titanic_data$AgeGroup)
+```
+
 ```{r}
 ages <- titanic_data$Age
 rows_less_than_1 <- titanic_data[ages < 1,] 
 print(rows_less_than_1)
-```
-```{r}
-ages <- titanic_data$Age
-rows_to_remove <- grepl("\\.", as.character(ages)) 
-titanic_data <- titanic_data[!rows_to_remove,]
-ages <- as.integer(titanic_data$Age)
-str(titanic_data)
 ```
 
 ```{r}
@@ -218,26 +229,6 @@ tukey_result <- TukeyHSD(anova_result)
 # 显示事后检验结果
 print(tukey_result)
 ```
-Pclass对Fare的影响是显著的。ANOVA的结果表中的Pr(>F)列给出了统计显著性水平，它的值非常接近于零 (<2e-16)，这说明Pclass与Fare之间的差异在统计上是显著的。
-
-Tukey's HSD事后检验的结果表明，不同船舱等级之间的Fare存在显著差异。下面是关于每一对组别之间的比较的一些关键信息：
-
-1等舱和2等舱之间的比较：
-
-差异（diff）：-66.57
-置信区间（95% confidence interval）：(-77.40, -55.74)
-调整后的p值（p adj）：<2e-16（非常显著）
-1等舱和3等舱之间的比较：
-
-差异（diff）：-74.65
-置信区间（95% confidence interval）：(-83.94, -65.36)
-调整后的p值（p adj）：<2e-16（非常显著）
-2等舱和3等舱之间的比较：
-
-差异（diff）：-8.08
-置信区间（95% confidence interval）：(-17.64, 1.48)
-调整后的p值（p adj）：0.12（不够显著）
-
 那我考虑将二等舱和三等舱合并为一个类型。而且Pclass和Fare应该只能选一个入模。
 
 
@@ -305,7 +296,7 @@ titanic_data %>%
 
 original_survived_column <- titanic_data$Survived
 # 独热编码
-titanic_data <- model.matrix(~ Pclass + Sex + Age + SibSp, data = titanic_data)
+titanic_data <- model.matrix(~ Pclass + Sex + AgeGroup + SibSp, data = titanic_data)
 # 删除第一列（避免虚拟变量陷阱）
 titanic_data <- titanic_data[, -1]
 titanic_data <- as.data.frame(titanic_data)
