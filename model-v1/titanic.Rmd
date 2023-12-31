@@ -1,0 +1,400 @@
+---
+title: "泰坦尼克号乘客生存预测模型"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+header-includes: \usepackage{ctex}
+---
+```{r}
+# 读取数据
+titanic_data <- read.csv('titanic.csv')
+
+# 查看数据结构
+str(titanic_data)
+```
+```{r}
+# 查看每列中 NA 的个数 (MARGIN = 2: 按列方向进行计算,返回每一列的计算结果)
+na_count <- apply(titanic_data, 2, function(x) sum(is.na(x)))
+na_count
+```
+
+```{r}
+# 直接把 NA 剔除
+titanic_data <- na.omit(titanic_data)
+str(titanic_data)
+```
+
+从Summary中可以明显的观察到，除了NA之外还有空字符串。
+
+```{r}
+# 统计空字符串和 NA 的函数
+empty_count <- function(x) {
+  
+  na_count <- sum(is.na(x))
+  empty_count <- sum(x == "")
+  
+  c(na_count, empty_count)
+}
+
+# 对每列应用这个函数
+counts <- apply(titanic_data, 2, empty_count)
+counts
+```
+现在 NA 确实处理完了, Cabin 缺失 529 个, 超过 80% 的值为空值, 即使填充也很难转换为有意义的特征, 所以直接删掉。
+Embarked只有少量空字符串,可以考虑填补众数或删除行，这里先删除了。Name 和 Ticket 这两个特征包含太多独特的字符串值, 直接删除可以减少模型复杂度。
+
+```{r}
+# 删除Cabin列
+titanic_data <- subset(titanic_data, select=-c(Cabin))
+# 删除Embarked为空的行  
+titanic_data <- titanic_data[titanic_data$Embarked != "",]
+# 删除Name列
+titanic_data <- subset(titanic_data, select=-c(Name)) 
+# 删除Ticket列
+titanic_data <- subset(titanic_data, select=-c(Ticket))
+```
+
+```{r}
+str(titanic_data)
+```
+Sex(性别)、Embarked(登船地点)需要转换为分类。
+Pclass(船舱等级)被当成了数字特征处理, 但其实它应该是一个分类特征。Pclass这个特征虽然用1,2,3表示等级, 但实际上等级之间并不存在数值上的大小关系。
+```{r}
+# Pclass
+titanic_data$Pclass <- as.factor(titanic_data$Pclass) 
+# Sex
+titanic_data$Sex <- as.factor(titanic_data$Sex)
+# Embarked
+titanic_data$Embarked <- as.factor(titanic_data$Embarked)
+```
+
+```{r}
+# 排除passengerId
+summary(titanic_data[, -1])
+```
+
+原始数据中的Age列存在一个异常值0.42, 提醒我还需要剔除下异常值。
+```{r}
+ages <- titanic_data$Age
+decimal_ages <- ages[grepl("\\.", as.character(ages))]
+
+decimal_ages
+```
+0.5的可能真的是半岁？但0.83、0.67之类的是什么意思？有重复应该不是巧合，好像是按照月份算的？刚好是1/12的倍数。还是不能全部删除，因为这些都是婴儿，好像都存活下来了。Parch还都不是0，更说明了这些都是婴儿，提醒我可以给年龄做分类变量。
+```{r}
+# 假设 titanic_data 是你的数据框，Age 是其中的一个列
+ages <- titanic_data$Age
+
+# 定义年龄组边界
+breaks <- c(-Inf, 2, 12, 18, 35, 60, Inf)
+labels <- c('Infant', 'Child', 'Teenager', 'YoungAdult', 'Adult', 'Senior')
+
+# 使用cut函数将年龄转换为因子型分类变量
+age_groups <- cut(ages, breaks = breaks, labels = labels, right = FALSE)
+
+# 将年龄组添加到原始数据框中
+titanic_data$AgeGroup <- age_groups
+
+# 查看转换后的数据
+table(titanic_data$AgeGroup)
+```
+
+```{r}
+ages <- titanic_data$Age
+rows_less_than_1 <- titanic_data[ages < 1,] 
+print(rows_less_than_1)
+```
+
+```{r}
+# 绘制箱线图
+par(mfrow = c(1,4)) 
+# Age  
+boxplot(titanic_data$Age, main="Age Boxplot")
+# SibSp 
+boxplot(titanic_data$SibSp, main="SibSp Boxplot")
+# Parch
+boxplot(titanic_data$Parch, main="Parch Boxplot") 
+# Fare
+boxplot(titanic_data$Fare, main="Fare Boxplot")
+```
+定义了一个函数outlier_counts, 它接受一个数值向量column作为输入, 计算其四分位数和四分位距, 并返回小于下边界或大于上边界的值的数量, 这些值被认为是离群点。
+```{r}
+# 计算每个数值变量的离群点数量和值
+outlier_analysis <- function(column) {
+  outliers <- numeric()
+  
+  Q1 <- quantile(column, 0.25)
+  Q3 <- quantile(column, 0.75)  
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR 
+  upper_bound <- Q3 + 1.5 * IQR
+
+  for(value in column){
+    if(value < lower_bound | value > upper_bound){
+      outliers = c(outliers, value)
+    }
+  }
+
+  return(list(count = length(outliers), values = outliers))
+}
+
+# 应用到Age列
+age_outliers <- outlier_analysis(titanic_data$Age)
+
+print(age_outliers)
+```
+票价（Fare）可能会有很大的变化，尤其是在泰坦尼克号数据集这样的历史数据中，票价差异可能反映了不同的舱位和服务等级。如果存在一些非常高价的票，它们可能会导致正偏态分布，从而产生较多的上端离群点。
+
+```{r}
+library(ggplot2)
+```
+
+### 1. 查看票价（`Fare`）分布
+```{r}
+ggplot(titanic_data, aes(x=Fare)) +
+  geom_histogram(binwidth = 10, fill="skyblue") +
+  labs(x='Fare', y='Count', title='Histogram of Fares')
+```
+
+### 2. 画出`Pclass`分布图
+观察不同船舱等级的数量分布，有助于了解不同等级船舱对票价分布的贡献。
+```{r}
+ggplot(titanic_data, aes(x=factor(Pclass))) +
+  geom_bar(fill="skyblue") +
+  labs(x='Pclass', y='Count', title='Bar Chart of Pclass Distribution')
+```
+
+### 3. 画出`Pclass`与`Fare`的箱线图
+了解不同`Pclass`船舱等级中票价的分布以及离群点的情况。
+```{r}
+ggplot(titanic_data, aes(x=factor(Pclass), y=Fare)) +
+  geom_boxplot() +
+  labs(x='Pclass', y='Fare', title='Boxplot of Fares by Pclass')
+```
+
+### 4. 根据`Pclass`单独计算离群点
+
+```{r}
+library(dplyr)
+
+titanic_data %>%
+  group_by(Pclass) %>%
+  summarise(
+    outliers = sum(Fare < quantile(Fare, 0.25) - 1.5 * IQR(Fare) | 
+                   Fare > quantile(Fare, 0.75) + 1.5 * IQR(Fare)), 
+    .groups = "drop")
+```
+三等舱离群点占比还是太高了，差不多有1/10，不能直接删掉。
+
+### 分类变量的分布
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# 四张图
+p1 <- ggplot(titanic_data, aes(x=Survived)) +
+  geom_bar(fill="skyblue", color="black") +
+  theme_minimal() +
+  labs(x='Survived', y='Count', title='Survival Distribution')
+
+p2 <- ggplot(titanic_data, aes(x=Pclass)) +
+  geom_bar(fill="lightgreen", color="black") + 
+  theme_minimal() +
+  labs(x='Pclass', y='Count', title='Pclass Distribution')
+
+p3 <- ggplot(titanic_data, aes(x=Sex)) +
+  geom_bar(fill="purple", color="black") +
+  theme_minimal() +
+  labs(x='Sex', y='Count', title='Gender Distribution')
+  
+p4 <- ggplot(titanic_data, aes(x=Embarked)) +
+  geom_bar(fill="orange", color="black") +
+  theme_minimal() +
+  labs(x='Embarked', y='Count', title='Embarkation Distribution')
+
+# 2x2网格排列
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+```{r}
+# 使用ANOVA检验Pclass与Fare之间的差异
+anova_result <- aov(Fare ~ as.factor(Pclass), data = titanic_data)
+summary(anova_result)
+# 运行Tukey's HSD事后检验
+tukey_result <- TukeyHSD(anova_result)
+# 显示事后检验结果
+print(tukey_result)
+```
+那我考虑将二等舱和三等舱合并为一个类型。而且Pclass和Fare应该只能选一个入模。
+
+```{r}
+# 使用ANOVA检验AgeGroup与Fare之间的差异
+anova_result <- aov(Fare ~ AgeGroup, data = titanic_data)
+summary(anova_result)
+
+TukeyHSD(anova_result)
+```
+Adult和YoungAdult之间的票价存在显著差异，而其他年龄组间的票价差异则不显著。
+
+```{r}
+library(ggplot2)
+
+ggplot(titanic_data, aes(x = AgeGroup, y = Fare)) +
+    geom_boxplot() +
+    theme_bw() +
+    labs(title = "Ticket Fare by Age Group", x = "Age Group", y = "Fare")
+```
+
+
+
+```{r}
+titanic_data$Pclass <- factor(titanic_data$Pclass, 
+                              levels=c("1", "2,3"))
+titanic_data$Pclass[titanic_data$Pclass == "2"] <- "2,3"  
+titanic_data$Pclass[titanic_data$Pclass == "3"] <- "2,3"
+titanic_data$Pclass[is.na(titanic_data$Pclass)] <- "2,3"
+str(titanic_data)
+```
+
+```{r}
+ggplot(titanic_data, aes(x=Pclass, y=Fare)) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(x='Pclass', y='Fare', title='Boxplot of Fares by Pclass')
+```
+```{r}
+library(dplyr)
+
+titanic_data %>%
+  group_by(Pclass) %>%
+  summarise(
+    outliers = sum(Fare < quantile(Fare, 0.25) - 1.5 * IQR(Fare) | 
+                   Fare > quantile(Fare, 0.75) + 1.5 * IQR(Fare)), 
+    count = n(),  # 添加数据个数列
+    .groups = "drop")
+```
+```{r}
+library(dplyr)
+
+# 定义一个函数，用于删除离群点
+remove_outliers <- function(data) {
+  Q1 <- quantile(data$Fare, 0.25)
+  Q3 <- quantile(data$Fare, 0.75)
+  IQR_value <- Q3 - Q1
+  lower_limit <- Q1 - 1.5 * IQR_value
+  upper_limit <- Q3 + 1.5 * IQR_value
+  return(filter(data, Fare >= lower_limit & Fare <= upper_limit))
+}
+
+# 对每个船舱等级应用函数
+titanic_data <- titanic_data %>%
+  group_by(Pclass) %>%
+  mutate(
+    outliers = sum(Fare < quantile(Fare, 0.25) - 1.5 * IQR(Fare) | 
+                   Fare > quantile(Fare, 0.75) + 1.5 * IQR(Fare)), 
+    count = n(),  # 添加数据个数列
+    .groups = "drop") %>%
+  group_modify(~ remove_outliers(.))
+
+```
+
+```{r}
+library(dplyr)
+
+titanic_data %>%
+  group_by(Pclass) %>%
+  summarise(
+    count = n(),  # 添加数据个数列
+    .groups = "drop")
+```
+
+```{r}
+
+original_survived_column <- titanic_data$Survived
+# 独热编码
+titanic_data <- model.matrix(~ Pclass + Sex + AgeGroup + SibSp, data = titanic_data)
+# 删除第一列（避免虚拟变量陷阱）
+titanic_data <- titanic_data[, -1]
+titanic_data <- as.data.frame(titanic_data)
+# 将原始的 Survived 列加回去
+titanic_data$Survived <- original_survived_column
+
+```
+
+
+```{r}
+# 拆分数据集
+library(caret)
+set.seed(123)
+split_index <- createDataPartition(titanic_data$Survived, p = 0.7, list = FALSE)
+train_data <- titanic_data[split_index, ]
+test_data <- titanic_data[-split_index, ]
+
+str(train_data)
+
+# 模型训练（逻辑回归）
+model <- glm(Survived ~ ., data = train_data, family = "binomial")
+summary(model)
+
+# 模型评估
+predictions <- predict(model, newdata = test_data, type = "response")
+predictions_class <- ifelse(predictions > 0.5, 1, 0)
+
+# 评估性能
+conf_matrix <- confusionMatrix(as.factor(predictions_class), as.factor(test_data$Survived))
+print(conf_matrix)
+
+```
+以下是模型输出的主要结论：
+
+- **Pclass2,3 (船舱等级)**: 船舱等级不是最高等级（即2等舱或3等舱）的个体，存活的对数几率会显著降低。系数为-2.0011，表示相对于参考类别（可能是1等舱），属于2等舱或3等舱的乘客存活几率较低。
+
+- **Sexmale (性别为男)**: 性别为男性的个体，存活的对数几率显著降低。系数为-2.8107，说明男性的存活率显著低于女性（参考类别）。
+
+- **Age Groups (年龄组)**: 所有的年龄组变量（Child, Teenager, YoungAdult, Adult, Senior）的系数都是负数，并且统计上显著，表明随着年龄的增长，存活的对数几率降低。这可能表明儿童（AgeGroupChild）和青少年（AgeGroupTeenager）的存活率比成年人更低，而成年人（AgeGroupAdult）和老年人（AgeGroupSenior）的存活率更低。
+
+- **SibSp (兄弟姐妹/配偶数量)**: 此系数为-0.3375，指在其他条件相同的情况下，乘客每多一个兄弟姐妹或配偶，存活的对数几率略微降低。
+
+所有变量的P值均小于0.05，意味着在5%的显著性水平上，这些变量与存活结果是统计显著相关的。星号的数量表示了不同级别的显著性，其中三个星号表示极其显著（P < 0.001），两个星号表示非常显著（P < 0.01），一个星号表示显著（P < 0.05）。
+
+总结来说，这个模型显示，船舱等级、性别、年龄组和有兄弟姐妹/配偶的数量是影响存活几率的显著因素。其中性别和船舱等级似乎是最强的预测因素，男性和低等舱乘客的存活率显著低于其他人。
+儿童与成年人相比存活率较低，但我怎么记得按照电影里儿童具有更高的存活率？
+
+```{r}
+
+library(pROC)
+
+# 计算 ROC 曲线和 AUC
+roc_curve <- roc(test_data$Survived, predictions)
+auc_value <- auc(roc_curve)
+
+# 绘制 ROC 曲线
+plot(roc_curve, main = "ROC Curve", col = "skyblue", lwd = 2)
+abline(a = 0, b = 1, lty = 2, col = "orange")  # 绘制虚线表示随机分类器的性能
+legend("bottomright", legend = paste("AUC =", round(auc_value, 3)), col = "skyblue", lwd = 2)
+
+# 添加标签和网格
+xlab("False Positive Rate")
+ylab("True Positive Rate")
+grid()
+
+```
+```{r}
+# 绘制混淆矩阵的热图
+fourfoldplot(conf_matrix$table)
+```
+```{r}
+library(gains)
+
+# 计算增益和提升
+gains_data <- gains(test_data$Survived, predictions)
+
+# 绘制增益图
+plot(gains_data, main = "Gain Chart", xlab = "Percentile", ylab = "Cumulative Gain")
+```
+
+
