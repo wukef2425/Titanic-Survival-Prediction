@@ -26,7 +26,7 @@ titanic_data <- na.omit(titanic_data)
 str(titanic_data)
 ```
 
-从Summary中可以明显的观察到，除了NA之外还有空字符串。
+从str中可以明显的观察到，除了NA之外还有空字符串。
 
 ```{r}
 # 统计空字符串和 NA 的函数
@@ -323,10 +323,6 @@ titanic_data <- as.data.frame(titanic_data)
 # 将原始的 Survived 列加回去
 titanic_data$Survived <- original_survived_column
 
-```
-
-
-```{r}
 # 拆分数据集
 library(caret)
 set.seed(123)
@@ -335,7 +331,10 @@ train_data <- titanic_data[split_index, ]
 test_data <- titanic_data[-split_index, ]
 
 str(train_data)
+```
 
+
+```{r}
 # 模型训练（逻辑回归）
 model <- glm(Survived ~ ., data = train_data, family = "binomial")
 summary(model)
@@ -373,7 +372,6 @@ auc_value <- auc(roc_curve)
 
 # 绘制 ROC 曲线
 plot(roc_curve, main = "ROC Curve", col = "skyblue", lwd = 2)
-abline(a = 0, b = 1, lty = 2, col = "orange")  # 绘制虚线表示随机分类器的性能
 legend("bottomright", legend = paste("AUC =", round(auc_value, 3)), col = "skyblue", lwd = 2)
 
 # 添加标签和网格
@@ -386,14 +384,4 @@ grid()
 # 绘制混淆矩阵的热图
 fourfoldplot(conf_matrix$table)
 ```
-```{r}
-library(gains)
-
-# 计算增益和提升
-gains_data <- gains(test_data$Survived, predictions)
-
-# 绘制增益图
-plot(gains_data, main = "Gain Chart", xlab = "Percentile", ylab = "Cumulative Gain")
-```
-
 
