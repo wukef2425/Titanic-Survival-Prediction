@@ -77,6 +77,26 @@ summary(titanic_data[, -1])
 
 原始数据中的Age列存在一个异常值0.42, 提醒我还需要剔除下异常值。
 ```{r}
+ages <- titanic_data$Age
+decimal_ages <- ages[grepl("\\.", as.character(ages))]
+
+decimal_ages
+```
+0.5的可能真的是半岁？但0.83、0.67之类的是什么意思？有重复应该不是巧合，好像是按照月份算的？刚好是1/12的倍数。所以就是有的人是按照年份算的，有的人是按照月份算的，那直接把按照月份算的全部删除。
+```{r}
+ages <- titanic_data$Age
+rows_less_than_1 <- titanic_data[ages < 1,] 
+print(rows_less_than_1)
+```
+```{r}
+ages <- titanic_data$Age
+rows_to_remove <- grepl("\\.", as.character(ages)) 
+titanic_data <- titanic_data[!rows_to_remove,]
+ages <- as.integer(titanic_data$Age)
+str(titanic_data)
+```
+
+```{r}
 # 绘制箱线图
 par(mfrow = c(1,4)) 
 # Age  
@@ -90,22 +110,29 @@ boxplot(titanic_data$Fare, main="Fare Boxplot")
 ```
 定义了一个函数outlier_counts, 它接受一个数值向量column作为输入, 计算其四分位数和四分位距, 并返回小于下边界或大于上边界的值的数量, 这些值被认为是离群点。
 ```{r}
-# 计算每个数值变量的离群点数量
-outlier_counts <- function(column) {
-  Q1 <- quantile(column, 0.25)
-  Q3 <- quantile(column, 0.75)
-  IQR <- Q3 - Q1
-  lower_bound <- Q1 - 1.5 * IQR
-  upper_bound <- Q3 + 1.5 * IQR
+# 计算每个数值变量的离群点数量和值
+outlier_analysis <- function(column) {
+  outliers <- numeric()
   
-  sum(column < lower_bound | column > upper_bound)
+  Q1 <- quantile(column, 0.25)
+  Q3 <- quantile(column, 0.75)  
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR 
+  upper_bound <- Q3 + 1.5 * IQR
+
+  for(value in column){
+    if(value < lower_bound | value > upper_bound){
+      outliers = c(outliers, value)
+    }
+  }
+
+  return(list(count = length(outliers), values = outliers))
 }
 
-# 应用到数据集的数值列
-num_columns <- sapply(titanic_data, is.numeric)
-outliers <- sapply(titanic_data[, num_columns], outlier_counts)
+# 应用到Age列
+age_outliers <- outlier_analysis(titanic_data$Age)
 
-outliers
+print(age_outliers)
 ```
 票价（Fare）可能会有很大的变化，尤其是在泰坦尼克号数据集这样的历史数据中，票价差异可能反映了不同的舱位和服务等级。如果存在一些非常高价的票，它们可能会导致正偏态分布，从而产生较多的上端离群点。
 
@@ -197,19 +224,19 @@ Tukey's HSD事后检验的结果表明，不同船舱等级之间的Fare存在�
 
 1等舱和2等舱之间的比较：
 
-差异（diff）：-66.58
-置信区间（95% confidence interval）：(-77.12, -56.03)
+差异（diff）：-66.57
+置信区间（95% confidence interval）：(-77.40, -55.74)
 调整后的p值（p adj）：<2e-16（非常显著）
 1等舱和3等舱之间的比较：
 
-差异（diff）：-74.82
-置信区间（95% confidence interval）：(-83.87, -65.77)
+差异（diff）：-74.65
+置信区间（95% confidence interval）：(-83.94, -65.36)
 调整后的p值（p adj）：<2e-16（非常显著）
 2等舱和3等舱之间的比较：
 
-差异（diff）：-8.24
-置信区间（95% confidence interval）：(-17.48, 0.99)
-调整后的p值（p adj）：0.0913（不够显著）
+差异（diff）：-8.08
+置信区间（95% confidence interval）：(-17.64, 1.48)
+调整后的p值（p adj）：0.12（不够显著）
 
 那我考虑将二等舱和三等舱合并为一个类型。而且Pclass和Fare应该只能选一个入模。
 
