@@ -145,25 +145,41 @@ age_outliers <- outlier_analysis(titanic_data$Age)
 
 print(age_outliers)
 ```
-票价（Fare）可能会有很大的变化，尤其是在泰坦尼克号数据集这样的历史数据中，票价差异可能反映了不同的舱位和服务等级。如果存在一些非常高价的票，它们可能会导致正偏态分布，从而产生较多的上端离群点。
-
 ```{r}
 library(ggplot2)
 ```
 
-### 1. 查看票价（`Fare`）分布
 ```{r}
-ggplot(titanic_data, aes(x=Fare)) +
-  geom_histogram(binwidth = 10, fill="skyblue") +
-  labs(x='Fare', y='Count', title='Histogram of Fares')
+ggplot(data = titanic_data, aes(x = Age)) +
+  geom_histogram(binwidth = 5, fill = 'skyblue', color = 'black') +
+  labs(title = "Age Distribution",
+  x = "Age",
+  y = "Count") +
+  theme_minimal()
 ```
 
-### 2. 画出`Pclass`分布图
-观察不同船舱等级的数量分布，有助于了解不同等级船舱对票价分布的贡献。
+票价（Fare）可能会有很大的变化，尤其是在泰坦尼克号数据集这样的历史数据中，票价差异可能反映了不同的舱位和服务等级。如果存在一些非常高价的票，它们可能会导致正偏态分布，从而产生较多的上端离群点。
+
+### 1. 查看票价（`Fare`）分布
 ```{r}
-ggplot(titanic_data, aes(x=factor(Pclass))) +
-  geom_bar(fill="skyblue") +
-  labs(x='Pclass', y='Count', title='Bar Chart of Pclass Distribution')
+ggplot(data = titanic_data, aes(x = Fare)) +
+  geom_density(fill = 'lightgreen', alpha = 0.5) +
+  labs(title = "Fare Density",
+  x = "Fare",
+  y = "Density") +
+  theme_minimal()
+```
+
+### 2. 画出船舱等级和票价的关系
+散点图可以显示不同船舱等级和票价之间的关系。
+```{r}
+ggplot(data = titanic_data, aes(x = factor(Pclass), y = Fare)) +
+  geom_jitter(aes(color = factor(Pclass)), width = 0.2) +
+  labs(title = "Fare by Pclass",
+  x = "Pclass",
+  y = "Fare") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_minimal()
 ```
 
 ### 3. 画出`Pclass`与`Fare`的箱线图
